@@ -327,23 +327,30 @@
     }
 
     function excelDateToJS(value) {
-      if (value instanceof Date) return value;
-      if (typeof value === 'number') {
-        const parsed = XLSX.SSF.parse_date_code(value);
-        if (!parsed) return null;
-        return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
-      }
-      if (value == null || value === '') return null;
-      const raw = String(value).trim();
-      const iso = new Date(raw);
-      if (!Number.isNaN(iso.getTime())) return iso;
-      const br = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-      if (br) {
-        const [, d, m, y, hh = '0', mm = '0', ss = '0'] = br;
-        return new Date(Number(y.length === 2 ? '20' + y : y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
-      }
-      return null;
-    }
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return null;
+    return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+  }
+  if (value == null || String(value).trim() === '') return null;
+
+  const raw = String(value).trim();
+  
+  // Tenta tratar formato brasileiro: DD/MM/YYYY HH:MM:SS ou DD/MM/YY
+  const br = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (br) {
+    const [, d, m, y, hh = '0', mm = '0', ss = '0'] = br;
+    const year = y.length === 2 ? parseInt('20' + y) : parseInt(y);
+    return new Date(year, parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss));
+  }
+
+  // Tenta conversão padrão (ISO/Americano)
+  const iso = new Date(raw);
+  if (!Number.isNaN(iso.getTime())) return iso;
+
+  return null;
+}
 
     function formatDateTime(value) {
       const d = excelDateToJS(value);
@@ -361,16 +368,18 @@
       return d.toLocaleDateString('pt-BR', { month: 'long' });
     }
 
-    function timeToMinutesPower(value, usePreventivaOnly) {
-      try {
-        const d = excelDateToJS(value);
-        if (!d) return null;
-        const base = d.getHours() * 60 + d.getMinutes();
-        return d.getHours() < 6 ? base + 1440 : base;
-      } catch {
-        return null;
-      }
-    }
+    function timeToMinutesPower(value) {
+  try {
+    const d = excelDateToJS(value);
+    if (!d || isNaN(d.getTime())) return null;
+    
+    // Mantém a lógica: se for antes das 06:00, soma 1440 min (considera continuação do dia anterior)
+    const base = d.getHours() * 60 + d.getMinutes();
+    return d.getHours() < 6 ? base + 1440 : base;
+  } catch (e) {
+    return null;
+  }
+}
 
     function removeColumns(rows, columnsToRemove) {
       return rows.map(row => {
