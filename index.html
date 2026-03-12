@@ -486,74 +486,84 @@
     }
 
     function computeTodosTicketsPowerQuery() {
-      let rows = [...state.slaRows, ...state.naoRows];
-      rows = removeColumns(rows, REMOVE_COLUMNS_COMMON);
+  let rows = [...state.slaRows, ...state.naoRows];
+  rows = removeColumns(rows, REMOVE_COLUMNS_COMMON);
 
-      rows = leftJoinSingle(
-        rows,
-        state.manual.arvore,
-        l => `${normalizeText(l['Identificador do Local'])}||${normalizeText(l['Cód Ponto'])}`,
-        r => `${normalizeText(r['Codigo SEP'] || r['Código SEP'])}||${normalizeText(r['Identificador do Local'])}`,
-        {
-          'Centro de Custo': 'Centro de Custo',
-          'Cód Projeto': 'Cód Projeto',
-          'Descrição Projeto': 'Descrição Projeto',
-          'Tipo Ativo': 'Tipo Ativo'
-        }
-      );
-
-      rows = leftJoinSingle(
-        rows,
-        state.manual.equipe,
-        l => normalizeText(l['Técnico']),
-        r => normalizeText(r['Nome']),
-        {
-          'Especialidade': 'Tipo de Responsabilidade',
-          'Turno': 'Turno',
-          'Dupla Atendimento': 'Dupla Atendimento'
-        }
-      );
-
-      rows = dedupeByField(rows, 'Nº');
-
-      rows = rows.map(r => {
-        const tipoAtividade = toText(r['Tipo de Atividade']);
-        const isPreventiva = tipoAtividade === 'Ruas - Manutenção Preventiva';
-        const inicioMin = isPreventiva ? timeToMinutesPower(r['Início do Serviço'], true) : null;
-        const fimMin = isPreventiva ? timeToMinutesPower(r['Conclusão do Serviço'], true) : null;
-        return {
-          ...r,
-          'Nome do Mês Conclusão': monthNameFromDate(r['Conclusão do Serviço']),
-          'Início do Serviço': formatDateTime(r['Início do Serviço']),
-          'Conclusão do Serviço': formatDateTime(r['Conclusão do Serviço']),
-          'Data de Encerramento': formatDateTime(r['Data de Encerramento']),
-          'Data de Criação': formatDateTime(r['Data de Criação']),
-          'Dia_do_Serviço': formatDateOnly(r['Início do Serviço']),
-          'Dia_da_Conclusão': formatDateOnly(r['Conclusão do Serviço']),
-          'Minutos_Puros_Inicio': inicioMin,
-          'Minutos_Puros_Conclusão': fimMin
-        };
-      }).filter(r => toText(r['Nº']) !== '');
-
-      rows = leftJoinSingle(
-        rows,
-        state.manual.minimos,
-        l => `${toText(l['Tipo de Atividade'])}||${toText(l['Dupla Atendimento'])}||${toText(l['Dia_do_Serviço'])}||${toText(l['Dia_da_Conclusão'])}`,
-        r => `${toText(r['Tipo de Atividade'])}||${toText(r['Dupla Atendimento'])}||${toText(r['Dia_do_Serviço'])}||${toText(r['Dia_da_Conclusão'])}`,
-        {
-          'Primeiro_Horario_Min': 'Primeiro_Horario_Min',
-          'Último_Horario_Máx': 'Último_Horario_Máx'
-        }
-      );
-
-      rows = rows.map(r => ({
-        ...r,
-        'É_Primeiro_Servico_do_Dia': r['Minutos_Puros_Inicio'] === r['Primeiro_Horario_Min'] ? 'SIM' : 'NÃO',
-        'É_Ultimo_Servico_do_Dia': r['Minutos_Puros_Conclusão'] === r['Último_Horario_Máx'] ? 'SIM' : 'NÃO'
-      }));
-
-      return rows;
+  // Join com Arvore_Ativos
+  rows = leftJoinSingle(
+    rows,
+    state.manual.arvore,
+    l => `${normalizeText(l['Identificador do Local'])}||${normalizeText(l['Cód Ponto'])}`,
+    r => `${normalizeText(r['Codigo SEP'] || r['Código SEP'])}||${normalizeText(r['Identificador do Local'])}`,
+    {
+      'Centro de Custo': 'Centro de Custo',
+      'Cód Projeto': 'Cód Projeto',
+      'Descrição Projeto': 'Descrição Projeto',
+      'Tipo Ativo': 'Tipo Ativo'
     }
+  );
+
+  // Join com Equipe para garantir que temos a "Dupla Atendimento"
+  rows = leftJoinSingle(
+    rows,
+    state.manual.equipe,
+    l => normalizeText(l['Técnico']),
+    r => normalizeText(r['Nome']),
+    {
+      'Especialidade': 'Tipo de Responsabilidade',
+      'Turno': 'Turno',
+      'Dupla Atendimento': 'Dupla Atendimento'
+    }
+  );
+
+  rows = dedupeByField(rows, 'Nº');
+
+  rows = rows.map(r => {
+    // AJUSTE: Cálculo de minutos puros liberado para todas as atividades
+    const inicioMin = timeToMinutesPower(r['Início do Serviço'], false);
+    const fimMin = timeToMinutesPower(r['Conclusão do Serviço'], false);
+    
+    return {
+      ...r,
+      'Nome do Mês Conclusão': monthNameFromDate(r['Conclusão do Serviço']),
+      'Início do Serviço': formatDateTime(r['Início do Serviço']),
+      'Conclusão do Serviço': formatDateTime(r['Conclusão do Serviço']),
+      'Data de Encerramento': formatDateTime(r['Data de Encerramento']),
+      'Data de Criação': formatDateTime(r['Data de Criação']),
+      'Dia_do_Serviço': formatDateOnly(r['Início do Serviço']),
+      'Dia_da_Conclusão': formatDateOnly(r['Conclusão do Serviço']),
+      'Minutos_Puros_Inicio': inicioMin,
+      'Minutos_Puros_Conclusão': fimMin
+    };
+  }).filter(r => toText(r['Nº']) !== '');
+
+  // Join com a tabela de Mínimos usando chaves normalizadas
+  rows = leftJoinSingle(
+    rows,
+    state.manual.minimos,
+    l => {
+      // Normaliza a data para o padrão de comparação YYYY-MM-DD se necessário
+      const dataLink = excelDateToJS(l['Dia_do_Serviço'])?.toISOString().split('T')[0] || toText(l['Dia_do_Serviço']);
+      return `${normalizeText(l['Tipo de Atividade'])}||${normalizeText(l['Dupla Atendimento'])}||${dataLink}`;
+    },
+    r => {
+      const dataLink = excelDateToJS(r['Dia_do_Serviço'])?.toISOString().split('T')[0] || toText(r['Dia_do_Serviço']);
+      return `${normalizeText(r['Tipo de Atividade'])}||${normalizeText(r['Dupla Atendimento'])}||${dataLink}`;
+    },
+    {
+      'Primeiro_Horario_Min': 'Primeiro_Horario_Min',
+      'Último_Horario_Máx': 'Último_Horario_Máx'
+    }
+  );
+
+  rows = rows.map(r => ({
+    ...r,
+    'É_Primeiro_Servico_do_Dia': (r['Minutos_Puros_Inicio'] != null && String(r['Minutos_Puros_Inicio']) === String(r['Primeiro_Horario_Min'])) ? 'SIM' : 'NÃO',
+    'É_Ultimo_Servico_do_Dia': (r['Minutos_Puros_Conclusão'] != null && String(r['Minutos_Puros_Conclusão']) === String(r['Último_Horario_Máx'])) ? 'SIM' : 'NÃO'
+  }));
+
+  return rows;
+}
 
     async function importBaseFile(file, target) {
       try {
