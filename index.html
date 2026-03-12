@@ -89,13 +89,36 @@
     button.small { padding: 7px 10px; font-size: 12px; }
 
     input[type="file"] { display: none; }
-    input[type="text"], input[type="number"], input[type="datetime-local"], input[type="date"] {
+    input[type="text"] {
       width: 100%;
       padding: 8px 10px;
       border-radius: 10px;
       border: 1px solid var(--border);
       background: white;
       font-size: 12px;
+    }
+
+    /* ESTILO NOVO: Células editáveis invisíveis (parecem texto normal até clicar) */
+    .editable-cell {
+      min-width: 60px;
+      min-height: 18px;
+      padding: 6px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      outline: none;
+      transition: all 0.2s;
+      white-space: pre-wrap; /* Permite quebrar linha se o texto for muito grande */
+      word-break: break-word;
+      cursor: text;
+    }
+    .editable-cell:hover {
+      background: rgba(0,0,0,0.03);
+      border-color: #d1d5db;
+    }
+    .editable-cell:focus {
+      background: #ffffff;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
     }
 
     .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
@@ -113,7 +136,6 @@
       font-size: 12px;
       text-align: left;
       vertical-align: top;
-      white-space: nowrap;
     }
     th {
       position: sticky;
@@ -121,6 +143,7 @@
       background: #111827;
       color: white;
       z-index: 2;
+      white-space: nowrap;
     }
 
     .muted { color: var(--muted); }
@@ -153,7 +176,7 @@
   <div class="app">
     <div class="hero">
       <h1>Query Mestra KPIs - Sistema HTML</h1>
-      <p>Versão com lógica baseada nas Power Queries, importação de bases, tabelas editáveis e consolidação automática da aba <strong>Todos_Tickets_Acrescentar</strong>.</p>
+      <p>Versão de Leitura: Textos livres para validação, clique para editar, cálculos otimizados e inclusão de linha no topo.</p>
     </div>
 
     <div class="tabs" id="tabs"></div>
@@ -327,30 +350,27 @@
     }
 
     function excelDateToJS(value) {
-  if (value instanceof Date) return value;
-  if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
-    if (!parsed) return null;
-    return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
-  }
-  if (value == null || String(value).trim() === '') return null;
-
-  const raw = String(value).trim();
-  
-  // Tenta tratar formato brasileiro: DD/MM/YYYY HH:MM:SS ou DD/MM/YY
-  const br = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
-  if (br) {
-    const [, d, m, y, hh = '0', mm = '0', ss = '0'] = br;
-    const year = y.length === 2 ? parseInt('20' + y) : parseInt(y);
-    return new Date(year, parseInt(m) - 1, parseInt(d), parseInt(hh), parseInt(mm), parseInt(ss));
-  }
-
-  // Tenta conversão padrão (ISO/Americano)
-  const iso = new Date(raw);
-  if (!Number.isNaN(iso.getTime())) return iso;
-
-  return null;
-}
+      if (value instanceof Date) return value;
+      if (typeof value === 'number') {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        if (!parsed) return null;
+        return new Date(parsed.y, parsed.m - 1, parsed.d, parsed.H || 0, parsed.M || 0, parsed.S || 0);
+      }
+      if (value == null || String(value).trim() === '') return null;
+      
+      const raw = String(value).trim();
+      
+      const br = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+      if (br) {
+        const [, d, m, y, hh = '0', mm = '0', ss = '0'] = br;
+        return new Date(Number(y.length === 2 ? '20' + y : y), Number(m) - 1, Number(d), Number(hh), Number(mm), Number(ss));
+      }
+      
+      const iso = new Date(raw);
+      if (!Number.isNaN(iso.getTime())) return iso;
+      
+      return null;
+    }
 
     function formatDateTime(value) {
       const d = excelDateToJS(value);
@@ -369,17 +389,15 @@
     }
 
     function timeToMinutesPower(value) {
-  try {
-    const d = excelDateToJS(value);
-    if (!d || isNaN(d.getTime())) return null;
-    
-    // Mantém a lógica: se for antes das 06:00, soma 1440 min (considera continuação do dia anterior)
-    const base = d.getHours() * 60 + d.getMinutes();
-    return d.getHours() < 6 ? base + 1440 : base;
-  } catch (e) {
-    return null;
-  }
-}
+      try {
+        const d = excelDateToJS(value);
+        if (!d || isNaN(d.getTime())) return null;
+        const base = d.getHours() * 60 + d.getMinutes();
+        return d.getHours() < 6 ? base + 1440 : base;
+      } catch {
+        return null;
+      }
+    }
 
     function removeColumns(rows, columnsToRemove) {
       return rows.map(row => {
@@ -451,8 +469,8 @@
         'Nome do Mês Conclusão': monthNameFromDate(r['Conclusão do Serviço']),
         'Dia_do_Serviço': formatDateOnly(r['Início do Serviço']),
         'Dia_da_Conclusão': formatDateOnly(r['Conclusão do Serviço']),
-        'Minutos_Puros_Inicio': timeToMinutesPower(r['Início do Serviço'], false),
-        'Minutos_Puros_Conclusão': timeToMinutesPower(r['Conclusão do Serviço'], false)
+        'Minutos_Puros_Inicio': timeToMinutesPower(r['Início do Serviço']),
+        'Minutos_Puros_Conclusão': timeToMinutesPower(r['Conclusão do Serviço'])
       }));
 
       const groups = new Map();
@@ -495,84 +513,73 @@
     }
 
     function computeTodosTicketsPowerQuery() {
-  let rows = [...state.slaRows, ...state.naoRows];
-  rows = removeColumns(rows, REMOVE_COLUMNS_COMMON);
+      let rows = [...state.slaRows, ...state.naoRows];
+      rows = removeColumns(rows, REMOVE_COLUMNS_COMMON);
 
-  // Join com Arvore_Ativos
-  rows = leftJoinSingle(
-    rows,
-    state.manual.arvore,
-    l => `${normalizeText(l['Identificador do Local'])}||${normalizeText(l['Cód Ponto'])}`,
-    r => `${normalizeText(r['Codigo SEP'] || r['Código SEP'])}||${normalizeText(r['Identificador do Local'])}`,
-    {
-      'Centro de Custo': 'Centro de Custo',
-      'Cód Projeto': 'Cód Projeto',
-      'Descrição Projeto': 'Descrição Projeto',
-      'Tipo Ativo': 'Tipo Ativo'
+      rows = leftJoinSingle(
+        rows,
+        state.manual.arvore,
+        l => `${normalizeText(l['Identificador do Local'])}||${normalizeText(l['Cód Ponto'])}`,
+        r => `${normalizeText(r['Codigo SEP'] || r['Código SEP'])}||${normalizeText(r['Identificador do Local'])}`,
+        {
+          'Centro de Custo': 'Centro de Custo',
+          'Cód Projeto': 'Cód Projeto',
+          'Descrição Projeto': 'Descrição Projeto',
+          'Tipo Ativo': 'Tipo Ativo'
+        }
+      );
+
+      rows = leftJoinSingle(
+        rows,
+        state.manual.equipe,
+        l => normalizeText(l['Técnico']),
+        r => normalizeText(r['Nome']),
+        {
+          'Especialidade': 'Tipo de Responsabilidade',
+          'Turno': 'Turno',
+          'Dupla Atendimento': 'Dupla Atendimento'
+        }
+      );
+
+      rows = dedupeByField(rows, 'Nº');
+
+      rows = rows.map(r => {
+        const inicioMin = timeToMinutesPower(r['Início do Serviço']);
+        const fimMin = timeToMinutesPower(r['Conclusão do Serviço']);
+        
+        return {
+          ...r,
+          'Nome do Mês Conclusão': monthNameFromDate(r['Conclusão do Serviço']),
+          'Início do Serviço': formatDateTime(r['Início do Serviço']),
+          'Conclusão do Serviço': formatDateTime(r['Conclusão do Serviço']),
+          'Data de Encerramento': formatDateTime(r['Data de Encerramento']),
+          'Data de Criação': formatDateTime(r['Data de Criação']),
+          'Dia_do_Serviço': formatDateOnly(r['Início do Serviço']),
+          'Dia_da_Conclusão': formatDateOnly(r['Conclusão do Serviço']),
+          'Minutos_Puros_Inicio': inicioMin,
+          'Minutos_Puros_Conclusão': fimMin
+        };
+      }).filter(r => toText(r['Nº']) !== '');
+
+      rows = leftJoinSingle(
+        rows,
+        state.manual.minimos,
+        l => `${normalizeText(l['Tipo de Atividade'])}||${normalizeText(l['Dupla Atendimento'])}||${l['Dia_do_Serviço']}`,
+        r => `${normalizeText(r['Tipo de Atividade'])}||${normalizeText(r['Dupla Atendimento'])}||${formatDateOnly(r['Dia_do_Serviço'])}`,
+        {
+          'Primeiro_Horario_Min': 'Primeiro_Horario_Min',
+          'Último_Horario_Máx': 'Último_Horario_Máx'
+        }
+      );
+
+      rows = rows.map(r => ({
+        ...r,
+        'É_Primeiro_Servico_do_Dia': (r['Minutos_Puros_Inicio'] != null && String(r['Minutos_Puros_Inicio']) === String(r['Primeiro_Horario_Min'])) ? 'SIM' : 'NÃO',
+        'É_Ultimo_Servico_do_Dia': (r['Minutos_Puros_Conclusão'] != null && String(r['Minutos_Puros_Conclusão']) === String(r['Último_Horario_Máx'])) ? 'SIM' : 'NÃO'
+      }));
+
+      return rows;
     }
-  );
-
-  // Join com Equipe para garantir que temos a "Dupla Atendimento"
-  rows = leftJoinSingle(
-    rows,
-    state.manual.equipe,
-    l => normalizeText(l['Técnico']),
-    r => normalizeText(r['Nome']),
-    {
-      'Especialidade': 'Tipo de Responsabilidade',
-      'Turno': 'Turno',
-      'Dupla Atendimento': 'Dupla Atendimento'
-    }
-  );
-
-  rows = dedupeByField(rows, 'Nº');
-
-  rows = rows.map(r => {
-    // AJUSTE: Cálculo de minutos puros liberado para todas as atividades
-    const inicioMin = timeToMinutesPower(r['Início do Serviço'], false);
-    const fimMin = timeToMinutesPower(r['Conclusão do Serviço'], false);
-    
-    return {
-      ...r,
-      'Nome do Mês Conclusão': monthNameFromDate(r['Conclusão do Serviço']),
-      'Início do Serviço': formatDateTime(r['Início do Serviço']),
-      'Conclusão do Serviço': formatDateTime(r['Conclusão do Serviço']),
-      'Data de Encerramento': formatDateTime(r['Data de Encerramento']),
-      'Data de Criação': formatDateTime(r['Data de Criação']),
-      'Dia_do_Serviço': formatDateOnly(r['Início do Serviço']),
-      'Dia_da_Conclusão': formatDateOnly(r['Conclusão do Serviço']),
-      'Minutos_Puros_Inicio': inicioMin,
-      'Minutos_Puros_Conclusão': fimMin
-    };
-  }).filter(r => toText(r['Nº']) !== '');
-
-  // Join com a tabela de Mínimos usando chaves normalizadas
-  rows = leftJoinSingle(
-    rows,
-    state.manual.minimos,
-    l => {
-      // Normaliza a data para o padrão de comparação YYYY-MM-DD se necessário
-      const dataLink = excelDateToJS(l['Dia_do_Serviço'])?.toISOString().split('T')[0] || toText(l['Dia_do_Serviço']);
-      return `${normalizeText(l['Tipo de Atividade'])}||${normalizeText(l['Dupla Atendimento'])}||${dataLink}`;
-    },
-    r => {
-      const dataLink = excelDateToJS(r['Dia_do_Serviço'])?.toISOString().split('T')[0] || toText(r['Dia_do_Serviço']);
-      return `${normalizeText(r['Tipo de Atividade'])}||${normalizeText(r['Dupla Atendimento'])}||${dataLink}`;
-    },
-    {
-      'Primeiro_Horario_Min': 'Primeiro_Horario_Min',
-      'Último_Horario_Máx': 'Último_Horario_Máx'
-    }
-  );
-
-  rows = rows.map(r => ({
-    ...r,
-    'É_Primeiro_Servico_do_Dia': (r['Minutos_Puros_Inicio'] != null && String(r['Minutos_Puros_Inicio']) === String(r['Primeiro_Horario_Min'])) ? 'SIM' : 'NÃO',
-    'É_Ultimo_Servico_do_Dia': (r['Minutos_Puros_Conclusão'] != null && String(r['Minutos_Puros_Conclusão']) === String(r['Último_Horario_Máx'])) ? 'SIM' : 'NÃO'
-  }));
-
-  return rows;
-}
 
     async function importBaseFile(file, target) {
       try {
@@ -623,7 +630,7 @@
     function addManualRow(key) {
       const row = {};
       MANUAL_SCHEMAS[key].forEach(col => row[col] = '');
-      state.manual[key].push(row);
+      state.manual[key].unshift(row);
       persistManualData();
       renderManualTab(key);
     }
@@ -646,7 +653,7 @@
         return;
       }
       persistManualData();
-      log(`Linha ${rowIndex + 1} salva em ${key}.`);
+      log(`Linha salva em ${key}.`);
       renderManualTab(key);
     }
 
@@ -725,7 +732,7 @@
             </label>
             <input class="search-box" type="text" id="search-${key}" placeholder="Buscar nesta aba" value="${escapeHtml(state.filters[key] || '')}" />
           </div>
-          <div class="muted" style="margin-bottom:8px;">Exibindo ${previewRows.length} de ${visibleRows.length} linhas filtradas. Cada linha pode ser editada e salva individualmente.</div>
+          <div class="muted" style="margin-bottom:8px;">Exibindo ${previewRows.length} de ${visibleRows.length} linhas filtradas. <b>Clique em qualquer texto para editá-lo.</b></div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -735,10 +742,14 @@
                 </tr>
               </thead>
               <tbody>
-                ${previewRows.map((row, visibleIndex) => {
+                ${previewRows.map((row) => {
                   const realIndex = allRows.indexOf(row);
                   return `<tr>
-                    ${columns.map(col => `<td><input type="text" value="${escapeHtml(row[col] ?? '')}" oninput="updateManualCell('${key}', ${realIndex}, '${col.replace(/'/g, "\\'")}', this.value)"></td>`).join('')}
+                    ${columns.map(col => `
+                      <td>
+                        <div class="editable-cell" contenteditable="true" oninput="updateManualCell('${key}', ${realIndex}, '${col.replace(/'/g, "\\'")}', this.innerText)">${escapeHtml(row[col] ?? '')}</div>
+                      </td>
+                    `).join('')}
                     <td>
                       <div class="toolbar tight">
                         <button class="success small" onclick="saveManualRow('${key}', ${realIndex})">Salvar</button>
@@ -750,7 +761,7 @@
               </tbody>
             </table>
           </div>
-          <p class="footer-note">Linhas novas são criadas em branco para preenchimento manual. Bases grandes como Arvore_Ativos podem precisar ser reimportadas após fechar a página.</p>
+          <p class="footer-note">Linhas novas são criadas em branco para preenchimento manual no topo da tabela.</p>
         </div>
       `;
     }
